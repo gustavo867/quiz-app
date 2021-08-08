@@ -17,3 +17,9 @@ export interface QuizDataFinished {
   finished_correct: boolean;
   finished: boolean;
 }
+
+export interface QuizRequestData {
+  category: string;
+  difficulty: string;
+  type: string;
+}

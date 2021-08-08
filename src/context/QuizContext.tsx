@@ -1,19 +1,31 @@
-import axios from "axios";
-import React, { useEffect } from "react";
+import { AxiosResponse } from "axios";
+import React from "react";
 import { useState } from "react";
 import { useRef } from "react";
 import { useCallback } from "react";
 import { useContext } from "react";
 import { useMemo } from "react";
 import { createContext } from "react";
-import { Alert, Animated, FlatList, View } from "react-native";
-import { QuizData, QuizDataFinished } from "../@types/quiz";
-import { BASE_URL } from "../services/api";
+import { Alert, Animated, FlatList } from "react-native";
+import {
+  useMutation,
+  UseMutationResult,
+  useQuery,
+  UseQueryResult,
+} from "react-query";
+import { QuizData, QuizDataFinished, QuizRequestData } from "../@types/quiz";
+import { fetchCategories, fetchQuiz } from "../queries/quiz";
+import { navigate } from "../routes";
 import { decode } from "../utils/encrypt";
 
 type Question = {
   text: string;
   correct: boolean;
+};
+
+type Categories = {
+  title: string;
+  id: string;
 };
 
 type IContext = {
@@ -28,12 +40,45 @@ type IContext = {
   handleNextQuestion: (isCorrect: boolean) => void;
   progress: Animated.Value;
   loading: boolean;
+  quizMutation: UseMutationResult<
+    {
+      data: any;
+      res: AxiosResponse<any>;
+    },
+    unknown,
+    QuizRequestData,
+    unknown
+  >;
+  categoriesQuery: UseQueryResult<
+    {
+      data: any;
+      res: AxiosResponse<any>;
+    },
+    unknown
+  >;
+  categories: Categories[];
+  categoryChoosed: number | string | undefined;
+  setCategoryChoosed: React.Dispatch<
+    React.SetStateAction<number | string | undefined>
+  >;
+  currentDifficulty: string | undefined;
+  setCurrentDifficulty: React.Dispatch<
+    React.SetStateAction<string | undefined>
+  >;
+  handleQuiz: () => void;
 };
 
 const QuizContext = createContext<IContext>({} as IContext);
 
 const QuizContextProvider: React.FC = ({ children }) => {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState<Categories[]>([]);
+  const [categoryChoosed, setCategoryChoosed] = useState<
+    number | string | undefined
+  >(undefined);
+  const [currentDifficulty, setCurrentDifficulty] = useState<
+    string | undefined
+  >(undefined);
   const [quizData, setQuizData] = useState<QuizData[]>([]);
   const [data, setData] = useState<QuizDataFinished[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<number | undefined>(
@@ -42,6 +87,47 @@ const QuizContextProvider: React.FC = ({ children }) => {
   const [currentQuestion, setCurrentQuestion] = useState<number>(0);
   const progress = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<FlatList<any>>(null);
+  const quizMutation = useMutation(
+    "quizMutation",
+    (data: QuizRequestData) => fetchQuiz(data),
+    {
+      onSuccess: ({ data }) => {
+        setQuizData(
+          data.map((q: QuizData) => ({
+            ...q,
+            category: decode(q.category),
+            type: decode(q.type),
+            question: decode(q.question),
+            correct_answer: decode(q.correct_answer),
+            incorrect_answers: q.incorrect_answers.map(item => decode(item)),
+          })),
+        );
+        setData(
+          data.map((q: QuizData) => ({
+            ...q,
+            finished_correct: false,
+            finished: false,
+            category: decode(q.category),
+            type: decode(q.type),
+            question: decode(q.question),
+            correct_answer: decode(q.correct_answer),
+            incorrect_answers: q.incorrect_answers.map(item => decode(item)),
+          })),
+        );
+
+        setLoading(false);
+
+        navigate("Quiz");
+      },
+    },
+  );
+  const categoriesQuery = useQuery("categoriesQuery", () => fetchCategories(), {
+    onSuccess: ({ data }) => {
+      setCategories(
+        data.map((item: any) => ({ title: item.name, id: item.id })),
+      );
+    },
+  });
 
   const handleNextQuestion = useCallback(
     (isCorrect: boolean) => {
@@ -63,6 +149,25 @@ const QuizContextProvider: React.FC = ({ children }) => {
         useNativeDriver: false,
       }).start();
 
+      if (currentQuestion + 1 === data.length) {
+        setData(state =>
+          state.map((q, i) =>
+            i === currentQuestion
+              ? {
+                  ...q,
+                  finished: true,
+                  finished_correct: isCorrect,
+                }
+              : q,
+          ),
+        );
+        setSelectedAnswer(undefined);
+        setCurrentQuestion(0);
+        navigate("Dashboard");
+
+        return;
+      }
+
       setData(state =>
         state.map((q, i) =>
           i === currentQuestion
@@ -82,43 +187,27 @@ const QuizContextProvider: React.FC = ({ children }) => {
     [selectedAnswer, currentQuestion, quizData],
   );
 
-  useEffect(() => {
-    async function fetchQuiz() {
-      const res = await axios.get(BASE_URL);
+  const handleQuiz = useCallback(() => {
+    if (!categoryChoosed === undefined) {
+      Alert.alert("Choose a category");
 
-      setQuizData(
-        res.data.results.map((q: any) => ({
-          ...q,
-          category: decode(q.category),
-          type: decode(q.type),
-          question: decode(q.question),
-          correct_answer: decode(q.correct_answer),
-          incorrect_answers: q.incorrect_answers.map((item: any) =>
-            decode(item),
-          ),
-        })),
-      );
-
-      setData(
-        res.data.results.map((q: any) => ({
-          ...q,
-          finished_correct: false,
-          finished: false,
-          category: decode(q.category),
-          type: decode(q.type),
-          question: decode(q.question),
-          correct_answer: decode(q.correct_answer),
-          incorrect_answers: q.incorrect_answers.map((item: any) =>
-            decode(item),
-          ),
-        })),
-      );
-
-      setLoading(false);
+      return;
     }
 
-    fetchQuiz();
-  }, []);
+    if (currentDifficulty === undefined) {
+      Alert.alert("Choose a difficulty");
+
+      return;
+    }
+
+    setLoading(true);
+
+    quizMutation.mutate({
+      category: String(categoryChoosed),
+      difficulty: String(currentDifficulty),
+      type: "multiple",
+    });
+  }, [currentDifficulty, categoryChoosed]);
 
   const values = useMemo(
     () => ({
@@ -133,6 +222,14 @@ const QuizContextProvider: React.FC = ({ children }) => {
       handleNextQuestion,
       progress,
       loading,
+      quizMutation,
+      categoriesQuery,
+      categories,
+      categoryChoosed,
+      setCategoryChoosed,
+      currentDifficulty,
+      setCurrentDifficulty,
+      handleQuiz,
     }),
     [
       quizData,
@@ -146,6 +243,14 @@ const QuizContextProvider: React.FC = ({ children }) => {
       handleNextQuestion,
       progress,
       loading,
+      quizMutation,
+      categoriesQuery,
+      categories,
+      categoryChoosed,
+      setCategoryChoosed,
+      currentDifficulty,
+      setCurrentDifficulty,
+      handleQuiz,
     ],
   );
 
