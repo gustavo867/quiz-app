@@ -17,7 +17,7 @@ type Props = {
 const AnswersList: React.FC<Props> = ({ data }) => {
   return (
     <FlatList
-      data={data.sort((a, b) => a.text.length - b.text.length)}
+      data={data}
       horizontal
       style={{
         marginTop: moderateScale(15),

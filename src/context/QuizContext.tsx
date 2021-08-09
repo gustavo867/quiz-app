@@ -7,21 +7,12 @@ import { useContext } from "react";
 import { useMemo } from "react";
 import { createContext } from "react";
 import { Alert, Animated, FlatList } from "react-native";
-import {
-  useMutation,
-  UseMutationResult,
-  useQuery,
-  UseQueryResult,
-} from "react-query";
+import { useMutation, UseMutationResult } from "react-query";
 import { QuizData, QuizDataFinished, QuizRequestData } from "../@types/quiz";
-import { fetchCategories, fetchQuiz } from "../queries/quiz";
+import { fetchQuiz } from "../queries/quiz";
 import { navigate } from "../routes";
 import { decode } from "../utils/encrypt";
-
-type Question = {
-  text: string;
-  correct: boolean;
-};
+import { categories as categoriesData } from "../utils/data";
 
 type Categories = {
   title: string;
@@ -49,13 +40,6 @@ type IContext = {
     QuizRequestData,
     unknown
   >;
-  categoriesQuery: UseQueryResult<
-    {
-      data: any;
-      res: AxiosResponse<any>;
-    },
-    unknown
-  >;
   categories: Categories[];
   categoryChoosed: number | string | undefined;
   setCategoryChoosed: React.Dispatch<
@@ -66,13 +50,15 @@ type IContext = {
     React.SetStateAction<string | undefined>
   >;
   handleQuiz: () => void;
+  retryQuiz: () => void;
+  quitQuiz: () => void;
 };
 
 const QuizContext = createContext<IContext>({} as IContext);
 
 const QuizContextProvider: React.FC = ({ children }) => {
   const [loading, setLoading] = useState(false);
-  const [categories, setCategories] = useState<Categories[]>([]);
+  const [categories, setCategories] = useState<Categories[]>(categoriesData);
   const [categoryChoosed, setCategoryChoosed] = useState<
     number | string | undefined
   >(undefined);
@@ -121,13 +107,6 @@ const QuizContextProvider: React.FC = ({ children }) => {
       },
     },
   );
-  const categoriesQuery = useQuery("categoriesQuery", () => fetchCategories(), {
-    onSuccess: ({ data }) => {
-      setCategories(
-        data.map((item: any) => ({ title: item.name, id: item.id })),
-      );
-    },
-  });
 
   const handleNextQuestion = useCallback(
     (isCorrect: boolean) => {
@@ -161,9 +140,6 @@ const QuizContextProvider: React.FC = ({ children }) => {
               : q,
           ),
         );
-        setSelectedAnswer(undefined);
-        setCurrentQuestion(0);
-        navigate("Dashboard");
 
         return;
       }
@@ -186,6 +162,22 @@ const QuizContextProvider: React.FC = ({ children }) => {
     },
     [selectedAnswer, currentQuestion, quizData],
   );
+
+  const retryQuiz = useCallback(() => {
+    setSelectedAnswer(undefined);
+    setCurrentQuestion(0);
+    scrollRef.current?.scrollToIndex({
+      index: 0,
+      animated: true,
+    });
+  }, [data]);
+
+  const quitQuiz = useCallback(() => {
+    setSelectedAnswer(undefined);
+    setCurrentQuestion(0);
+    setCategoryChoosed(undefined);
+    navigate("Dashboard");
+  }, []);
 
   const handleQuiz = useCallback(() => {
     if (!categoryChoosed === undefined) {
@@ -223,13 +215,14 @@ const QuizContextProvider: React.FC = ({ children }) => {
       progress,
       loading,
       quizMutation,
-      categoriesQuery,
       categories,
       categoryChoosed,
       setCategoryChoosed,
       currentDifficulty,
       setCurrentDifficulty,
       handleQuiz,
+      quitQuiz,
+      retryQuiz,
     }),
     [
       quizData,
@@ -244,13 +237,14 @@ const QuizContextProvider: React.FC = ({ children }) => {
       progress,
       loading,
       quizMutation,
-      categoriesQuery,
       categories,
       categoryChoosed,
       setCategoryChoosed,
       currentDifficulty,
       setCurrentDifficulty,
       handleQuiz,
+      quitQuiz,
+      retryQuiz,
     ],
   );
 
